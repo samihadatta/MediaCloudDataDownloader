@@ -40,8 +40,12 @@ import socket
 
 from utils import handle_dirs
 
+import inspect
+
 MAX_WORKERS = 1000
 MAX_CPUS = multiprocessing.cpu_count()
+
+LEVEL = "INTL"
 
 Story = namedtuple('Story', ['id',
                              'title',
@@ -173,7 +177,7 @@ def stories_about_topic(api_gen, mc, query, period, fetch_size=10, limit=10):
     return stories
 
 
-def get_one_article(story, cur_topic, save_format='json'):
+def get_one_article(story, cur_topic, output_file, LEVEL, save_format='json'):
     """
     Return a dict that stores all the information extracted from url
     :param cur_topic: current query topic
@@ -198,8 +202,10 @@ def get_one_article(story, cur_topic, save_format='json'):
             status = 'success'
 
             # set attributes that story already has
+            # input("Story: " + str(story))
             title = story['title']
             media_name = story['media_name']
+            media_id = story['media_id'] # used for writing to file!
             media_url = story['media_url']
             pub_date = story['publish_date']
             stories_id = story['stories_id']
@@ -216,6 +222,7 @@ def get_one_article(story, cur_topic, save_format='json'):
 
             response = Story(hashed_id, title, author, media_name, media_url, pub_date, stories_id, guid,
                              processed_stories_id, text)
+            save_response_paragraphs_by_location(media_id, cur_topic, response._asdict(), output_file, LEVEL, )
     else:
         status = 'fail'
         return Response(response, status)
@@ -229,19 +236,17 @@ def get_one_article(story, cur_topic, save_format='json'):
     elif save_format == 'csv':
         csv_file_name = ''.join([hashed_id, '.csv'])
         save_as_csv(''.join(['output_2021/', cur_topic]), csv_file_name, response)
-
     return Response(response, status)
 
 
-def get_many_articles(cur_topics, stories, save_format='json'):
+def get_many_articles(cur_topics, stories, output_file, LEVEL, save_format='json'):
     responses = []
     counter = Counter()
     workers = min(MAX_WORKERS, len(stories))
-
     with futures.ThreadPoolExecutor(workers) as executor:
         to_do_map = {}
         for story in stories:
-            future = executor.submit(get_one_article, story, cur_topics, save_format)
+            future = executor.submit(get_one_article, story, cur_topics, output_file, LEVEL, save_format)
             to_do_map[future] = story
         done_iter = futures.as_completed(to_do_map)
 
@@ -265,10 +270,37 @@ def get_many_articles(cur_topics, stories, save_format='json'):
 
             counter[get_many_status] += 1
 
+    responses_loaded = Responses(responses, counter)
+    # print("responses: " + str(responses_loaded[0][0])) # loop through reponses_loaded[i][j][text] -> can parse stuff out!
+    # input("responses: " + str(responses_loaded))
+    # if (responses_loaded[0]):
+        # input("FIRST: " + str(responses_loaded[0]))
+        # input("FIRST FIRST: " + str(responses_loaded[0][0]))
+    # save_response_paragraphs_by_location(place, cur_topics, responses_loaded, output_file)
     return Responses(responses, counter)
 
+def save_response_paragraphs_by_location(media_id, topic, story_dict, output_file, LEVEL):
+    place = Media[LEVEL]["PlaceFromMediaId"][media_id]
+    text = story_dict["text"]
+    split_text = text.split("\n\n")
+    for paragraph in split_text:
+        screened_paragraph = paragraph.replace("<a>", "");
+        screened_paragraph = screened_paragraph.replace("</a>", "");
+        num_words = screened_paragraph.split(" ")
+        if num_words > 3:
+            output_file.write(place + "," + topic + "," + screened_paragraph + "\n")
+                        
 
 if __name__ == '__main__':
+    # Determine dataset you're pulling from
+    LEVEL = input("Enter which dataset you'd like to use (\"INTL\" or \"US\"): ")
+    # Set output file
+    output_file_name = input("Enter your output file name: ")
+    output_file = open(output_file_name, "w")
+
+
+    # SET WHAT DATA YOU'RE PULLING FROM HERE!!!
+    relevant_media = Media[LEVEL]
 
     # SET YOUR API KEYS IN THE TXT FILE !!!
     apis = get_list_of_APIs('api_key.txt')
@@ -276,44 +308,49 @@ if __name__ == '__main__':
     mc = mediacloud.api.MediaCloud(next(api_gen)[0])  # call the generator
 
     # SET YOUR QUERY TOPICS HERE !!!
-    query_topics = ["abortion", "gay marriage", "death penalty", "euthanasia", "border wall", "immigration ban",
-                    "sanctuary cities", "muslim surveillance", "no-fly list gun control", "drug policy",
-                    "net neutrality",
-                    "affirmative action", "social media regulation", "social security", "obamacare", "marijuana",
-                    "climate change",
-                    "paris climate agreement", "fracking", "minimum wage", "corporate tax", "equal pay", "welfare",
-                    "NAFTA", "tariffs", "china tariffs", "federal reserve", "farm subsidies", "bitcoin",
-                    "electoral college",
-                    "voter fraud", "campaign finance", "lobbyists", "military spending", "united nations", "torture",
-                    "NATO",
-                    "israel", "North Korea", "Ukraine", "Russia", "terrorism", "foreign aid", "drones", "Cuba",
-                    "student loans",
-                    "common core", "private prisons", "mandatory minimum prison sentences", "mandatory vaccinations",
-                    "GMO labels",
-                    "gerrymandering"]
+    # query_topics = ["abortion", "gay marriage", "death penalty", "euthanasia", "border wall", "immigration ban",
+    #                 "sanctuary cities", "muslim surveillance", "no-fly list gun control", "drug policy",
+    #                 "net neutrality",
+    #                 "affirmative action", "social media regulation", "social security", "obamacare", "marijuana",
+    #                 "climate change",
+    #                 "paris climate agreement", "fracking", "minimum wage", "corporate tax", "equal pay", "welfare",
+    #                 "NAFTA", "tariffs", "china tariffs", "federal reserve", "farm subsidies", "bitcoin",
+    #                 "electoral college",
+    #                 "voter fraud", "campaign finance", "lobbyists", "military spending", "united nations", "torture",
+    #                 "NATO",
+    #                 "israel", "North Korea", "Ukraine", "Russia", "terrorism", "foreign aid", "drones", "Cuba",
+    #                 "student loans",
+    #                 "common core", "private prisons", "mandatory minimum prison sentences", "mandatory vaccinations",
+    #                 "GMO labels",
+    #                 "gerrymandering"]
+    query_topics = ["global warming", "abortion", "immigration", "social security", "mandatory vaccinations"]
 
     # SET YOUR PERIOD HERE !!!
     start_date = datetime.date(2020, 1, 1)
-    end_date = datetime.date(2020, 12, 24)
+    end_date = datetime.datetime.now().date();
+
+    language = "language:en"
 
     period = mc.dates_as_query_clause(start_date, end_date)
 
     for topics in query_topics:
         # for period in periods:
-        for media in Media:
+        for media in relevant_media["MediaToIds"]:
             cur_media_id = media.value
-            media_id = ''.join(["media_id:", str(cur_media_id)])
-            query = ''.join([topics, ' AND ', media_id])
-            res_stories = stories_about_topic(api_gen,
-                                              mc,
-                                              query,
-                                              period,
-                                              fetch_size=50,
-                                              limit=50)
-            print("We have fetched {} stories from {} about {}".format(len(res_stories), media.name, topics))
-            if len(res_stories) != 0:
-                story_responses = get_many_articles(topics, res_stories, save_format='json')
-                print("Finished! {} success, and {} failure".format(story_responses.count['success'],
-                                                                    story_responses.count['fail']))
-                print('*' * 40)
-                print()
+            if cur_media_id == 19320:
+                media_id = ''.join(["media_id:", str(cur_media_id)])
+                query = ''.join([topics, ' AND ', media_id, ' AND ', language])
+                res_stories = stories_about_topic(api_gen,
+                                                mc,
+                                                query,
+                                                period,
+                                                fetch_size=1000,
+                                                limit=50)
+                print("We have fetched {} stories from {} about {}".format(len(res_stories), media.name, topics))
+                if len(res_stories) != 0:
+                    story_responses = get_many_articles(topics, res_stories, output_file, LEVEL, save_format='csv')
+                    print("Finished! {} success, and {} failure".format(story_responses.count['success'],
+                                                                        story_responses.count['fail']))
+                    print('*' * 40)
+                    print()
+    output_file.close()
